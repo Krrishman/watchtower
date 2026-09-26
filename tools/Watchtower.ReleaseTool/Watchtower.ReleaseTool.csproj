@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Watchtower.ReleaseTool</RootNamespace>
+    <AssemblyName>wt-release</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Watchtower.Core\Watchtower.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,31 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!--
+    Builds Watchtower.msi from the published service and the packaged UI.
+    Windows only (WiX needs the Windows Installer API). Build order, from the repo root:
+      dotnet publish src/Watchtower.Service -c Release -o artifacts/service -p:Version=X.Y.Z
+      (cd ui && npm ci && npm run pack)                       -> artifacts/ui/win-unpacked
+      dotnet build installer -c Release -p:Version=X.Y.Z      -> installer/bin/Release/Watchtower.msi
+  -->
+  <PropertyGroup>
+    <OutputName>Watchtower</OutputName>
+    <OutputType>Package</OutputType>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
+    <ServiceDir Condition="'$(ServiceDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\service</ServiceDir>
+    <UiDir Condition="'$(UiDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\ui\win-unpacked</UiDir>
+    <DefineConstants>Version=$(Version)</DefineConstants>
+    <SuppressValidation Condition="'$(OS)' != 'Windows_NT'">true</SuppressValidation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BindPath Include="$(ServiceDir)" BindName="Service" />
+    <BindPath Include="$(UiDir)" BindName="Ui" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

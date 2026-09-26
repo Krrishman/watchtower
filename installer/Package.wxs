@@ -1,0 +1,91 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!-- UpgradeCode must never change: it's how Windows knows new versions replace old ones. -->
+  <Package Name="Watchtower"
+           Manufacturer="Watchtower"
+           Version="$(var.Version)"
+           UpgradeCode="{5E0F7B5C-4C5E-4F58-9C8B-7A4B3C2D1E0F}"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <!-- AllowDowngrades lets the updater put a previous version back when an update fails its health check. -->
+    <MajorUpgrade AllowDowngrades="yes" Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://watchtower.example.com" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Launch Condition="Installed OR VersionNT64 &gt;= 603" Message="Watchtower needs 64-bit Windows 10 or later." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Watchtower">
+        <Directory Id="ServiceFolder" Name="Service" />
+        <Directory Id="AppFolder" Name="App" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- The background service: starts with Windows, before anyone signs in, and restarts itself if it stops. -->
+    <ComponentGroup Id="ServiceComponents" Directory="ServiceFolder">
+      <Component Id="ServiceExecutable" Bitness="always64">
+        <File Id="ServiceExe" Source="!(bindpath.Service)\Watchtower.Service.exe" KeyPath="yes" />
+        <ServiceInstall Id="WatchtowerService"
+                        Name="Watchtower"
+                        DisplayName="Watchtower"
+                        Description="Watches this PC for remote access, remote-control software, suspicious new programs and network exposure, and keeps a tamper-evident history."
+                        Type="ownProcess"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Vital="yes">
+          <!-- Windows restarts the service after any unexpected exit, including being killed.
+               The update health gate counts these restarts to detect a bad update. -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="5"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+        <ServiceControl Id="WatchtowerServiceControl" Name="Watchtower" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      </Component>
+      <Files Include="!(bindpath.Service)\**">
+        <Exclude Files="!(bindpath.Service)\Watchtower.Service.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- The desktop app: shows alerts and notifications; starts hidden in the tray at sign-in. -->
+    <ComponentGroup Id="AppComponents" Directory="AppFolder">
+      <Files Include="!(bindpath.Ui)\**" />
+      <Component Id="AppAutostart" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Watchtower"
+                       Type="string" Value="&quot;[AppFolder]Watchtower.exe&quot; --hidden" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="{B2E4F3A1-8C7D-4E6F-9A1B-2C3D4E5F6A7B}" Bitness="always64">
+        <Shortcut Id="WatchtowerShortcut" Name="Watchtower" Description="Open Watchtower"
+                  Target="[AppFolder]Watchtower.exe" WorkingDirectory="AppFolder" />
+        <RegistryValue Root="HKLM" Key="Software\Watchtower" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- Native crash dumps of the service go to its (admin-only) data folder for diagnosis. -->
+    <Component Id="CrashDumpSettings" Directory="INSTALLFOLDER" Bitness="always64">
+      <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\Watchtower.Service.exe">
+        <RegistryValue Name="DumpFolder" Type="expandable" Value="%ProgramData%\Watchtower\crashes" KeyPath="yes" />
+        <RegistryValue Name="DumpCount" Type="integer" Value="5" />
+        <RegistryValue Name="DumpType" Type="integer" Value="1" />
+      </RegistryKey>
+    </Component>
+
+    <Feature Id="Main" Title="Watchtower" Level="1">
+      <ComponentGroupRef Id="ServiceComponents" />
+      <ComponentGroupRef Id="AppComponents" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="CrashDumpSettings" />
+    </Feature>
+
+    <!-- Uninstalling leaves %ProgramData%\Watchtower (the history log) in place on purpose:
+         removing the program must not also remove the record of what happened. -->
+  </Package>
+</Wix>

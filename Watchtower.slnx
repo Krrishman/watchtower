@@ -8,5 +8,6 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Watchtower.DevHost/Watchtower.DevHost.csproj" />
+    <Project Path="tools/Watchtower.ReleaseTool/Watchtower.ReleaseTool.csproj" />
   </Folder>
 </Solution>

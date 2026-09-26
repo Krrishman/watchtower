@@ -1,335 +1,169 @@
 # Watchtower
 
-A local desktop app that watches your own Windows machine for signs of
-remote access, remote-control software, unusual outbound network
-connections, camera/microphone use, newly-installed programs behaving
-suspiciously, and basic system health — and keeps a persistent history
-of all of it, not just a live feed.
+Watchtower watches a Windows PC for signs that someone else is using it or reaching into it. It looks for:
 
-This was scaffolded to get you a strong starting point, not a finished
-security product. Read **Limitations** before relying on it.
+- remote sign-ins
+- remote-control programs
+- new programs that open ports, go online or add themselves to startup
+- programs disguised as Windows files
+- unexpected network connections
+- camera and microphone use
 
-## Requirements
+It keeps a tamper-evident history of everything it sees. It isn't antivirus; it works alongside Microsoft Defender.
 
-- Windows 10 or 11
-- [Node.js](https://nodejs.org) (LTS version)
+## How it's built
 
-## Setup
-
-```bash
-cd watchtower
-npm install
-npm start
+```
+┌──────────────────────────── Windows PC ─────────────────────────────┐
+│                                                                     │
+│  Watchtower service (LocalSystem, starts at boot, no window)        │
+│   ├─ ETW kernel session ── every process launch, TCP connect/accept │
+│   ├─ Security log subscription ── sign-ins, failures, logoffs       │
+│   ├─ Native snapshots ── TCP table, WTS sessions, camera/mic ledger,│
+│   │                      startup items, services, Defender (WMI)    │
+│   ├─ Watchtower.Core ── detection, plain-English alerts, trust,     │
+│   │                     safety guards, hash-chained history         │
+│   ├─ Updater ── signed manifest, staged rollout, auto-rollback      │
+│   └─ Named pipe \\.\pipe\Watchtower.v1 (local users only)           │
+│               ▲                                                     │
+│               │ newline-delimited JSON RPC + pushed events          │
+│               ▼                                                     │
+│  Watchtower app (Electron, per user, tray + notifications)          │
+│                                                                     │
+│  %ProgramData%\Watchtower  (SYSTEM + Administrators only)           │
+│    history\  state\  crashes\  updates\                             │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-For full coverage, right-click your terminal (or a shortcut to `npm start`)
-and choose **Run as administrator**. Watchtower detects this at launch and
-shows a banner if it's running unelevated, so you're never guessing. Without elevation, Windows won't let
-the app read the Security event log, so login history, durations, and
-failed-attempt alerts won't work — sessions, remote-tool detection,
-network, camera/mic, process table, and new-program watching all still
-work unelevated.
+| Path | What it is |
+|---|---|
+| `src/Watchtower.Core` | Platform-neutral logic: alert catalog, history, trust rules, guards, detection trackers, exposure analysis, update manifests and rollout, RPC. Fully unit-tested. |
+| `src/Watchtower.Service` | The Windows service: ETW and native Windows APIs, pipe server, updater, crash reporting. |
+| `ui/` | The Electron app, a thin client of the service. |
+| `installer/` | WiX MSI: installs the service (auto-start, restart on failure) and the app. |
+| `tools/Watchtower.DevHost` | Stand-in service with simulated Windows data, for building and testing the UI on any OS. |
+| `tools/Watchtower.ReleaseTool` | `wt-release`: signing keys, manifests and rollouts. |
+| `tests/` | Core unit tests. UI tests live in `ui/test/`. |
 
-## Start at logon
+## Building and testing
 
-**Settings > Start automatically** registers a scheduled task that launches
-Watchtower at logon **with administrator rights**. This is deliberately not
-Windows' normal startup-shortcut mechanism, which would start the app
-unelevated and silently disable login history, session disconnect, firewall
-blocks, and most debloat toggles on every boot. Creating the task requires
-running Watchtower as Administrator once.
-
-Without this on, anything that happens before you manually open the app is
-never logged.
-
-## Exporting history
-
-**History > Export CSV / Export JSON** writes the *full* log (not just what's
-on screen), honoring whichever source filter is active. CSV opens cleanly in
-Excel. Useful if you ever need to hand the record to someone else.
-
-## Tamper-evident history
-
-Every history entry is hash-chained to the one before it and carries a
-sequence number. **History > Verify integrity** walks the chain and reports
-the first break it finds. This detects:
-
-- an entry edited in place
-- an entry deleted from the middle (sequence gap)
-- the most recent entries deleted to hide activity (tracked via a separate
-  high-water mark, since a truncated chain is otherwise self-consistent)
-
-Exports include the sequence and hash so the record stays verifiable
-outside the app.
-
-**What this does and doesn't do:** it makes tampering *detectable*, not
-*impossible*. Anyone with administrator rights can still rewrite the log —
-they'd just have to forge the whole chain and the high-water file to do it
-silently. Preventing tampering outright needs an append-only store off the
-machine, which is why shipping a copy elsewhere (below) matters.
-
-## Real-time process detection
-
-Alongside interval polling, Watchtower subscribes to WMI
-`Win32_ProcessStartTrace`, which fires on **every** process launch. This
-closes the gap where a program could start and exit between two polls and
-never be seen.
-
-The **Real-time** indicator in the sidebar shows `live` when the
-subscription is active and `polling` when it isn't. It requires
-administrator rights; without them Watchtower falls back to polling and
-says so rather than implying coverage it doesn't have.
-
-## Network exposure
-
-The **Exposure** tab answers "what can reach this machine from outside?"
-
-The central distinction is what each listening port is **bound to**. A port on
-`127.0.0.1` cannot be reached from another machine at all; one on `0.0.0.0` is
-reachable from your whole network — and from the internet if your router
-forwards it. The tab splits ports into those two groups rather than alarming
-about everything that happens to be listening.
-
-It also checks:
-
-- **Adapter IPs** — flags a *public* IP sitting directly on an adapter, which
-  means no router/NAT is shielding you and every open port faces the internet.
-- **Firewall profiles** — Domain/Private/Public on or off, and default inbound action.
-- **Remote Desktop** — enabled state, port, and whether Network Level
-  Authentication is required. Without NLA, an unauthenticated attacker reaches
-  the logon screen itself.
-- **DNS servers** — DNS redirection silently sends you to fake sites.
-- **Hosts file** — classic redirection vector; ad-blockers use it legitimately,
-  so entries are shown for review rather than flagged as malicious.
-- **Proxy settings** — a system proxy or auto-config URL you didn't set means
-  something may be reading your web traffic.
-- **Tunnel/VPN adapters** — active tunnels that don't match known VPN software
-  are flagged, since an unexplained tunnel is a serious backdoor indicator.
-- **SMB shares** — built-in administrative shares (`C$`, `ADMIN$`, `IPC$`) are
-  marked as built-in rather than flagged; anything else you've shared is listed.
-
-Buttons jump straight to the relevant Windows settings pages for RDP, firewall,
-and proxy.
-
-### What it deliberately doesn't do
-
-- **No outbound calls.** Everything is read locally. Watchtower doesn't contact
-  a third-party service to look up your public IP, so using it doesn't tell
-  anyone else about your machine.
-- **No external port scan.** Whether your *router* forwards a port to this
-  machine can only be tested from outside your network. The tab tells you what
-  this machine exposes; check your router's port-forwarding and UPnP settings
-  separately for the rest.
-
-## Off-machine backup
-
-**Settings > Off-machine backup** mirrors the history log into a folder you
-choose. Point it at a cloud-synced folder (OneDrive, Dropbox, Google Drive)
-or a network share — then wiping this machine doesn't erase the record, and
-the cloud service's own version history defeats an overwrite.
-
-It syncs on a timer (5/15/60 min) and immediately after any **critical**
-alert, debounced so an alert burst triggers one sync rather than a dozen.
-Files land in `<folder>/watchtower-<hostname>/`, so several machines can
-safely share one destination.
-
-The anchor and high-water sidecar files are copied alongside the log, so
-the off-machine copy stays independently verifiable — not just a blob of
-text. Writes go to a temp name and are renamed into place, so a sync
-interrupted partway can't leave a truncated log at the destination.
-
-**This is the single most valuable security addition in the app.** The hash
-chain tells you *if* your log was tampered with; an off-machine copy is what
-gives you an untampered one to compare against.
-
-## Running in the background
-
-Closing the window **hides** Watchtower to the system tray rather than
-quitting — monitoring and the history log keep running, which is the
-whole point of a watcher. Use the tray icon to reopen it, or **Quit
-(stops monitoring)** from the tray right-click menu to actually exit.
-
-Data (history, baselines, known users, settings) is stored in
-`%APPDATA%\Watchtower\store\` so it persists correctly in both `npm
-start` and a packaged install.
-
-## Tabs
-
-- **Live Feed** — everything as it happens.
-- **Processes** — every running process, whether it's digitally signed,
-  and whether it currently has an active network connection, with a
-  **Kill** button per process. Also lists active sessions with a
-  **Disconnect** button for any RDP session. Signed isn't a guarantee of
-  safety, and unsigned isn't proof of danger — lots of legitimate
-  small/free software is unsigned — but it's a real signal worth
-  knowing.
-- **Network** — live outbound connections by process, with a **Block**
-  button that adds a Windows Firewall rule for that address, and a
-  manager for addresses you've already blocked.
-- **History** — a persistent, filterable log of everything Watchtower
-  has ever recorded, so you can check "did anything happen while I was
-  away" even if you never watched the live feed. This only covers time
-  the app was actually running.
-- **Health Check** — shows current Windows Defender status, active
-  Defender detections (with a button to jump into the native Windows
-  Security app to remove them), a way to trigger a real quick scan, and
-  Watchtower's own heuristic review of startup entries (removable with
-  one click) and listening ports (killable with one click).
-- **Debloat** — reversible on/off switches for Windows 11's telemetry,
-  AI, and ad-personalization features, plus bundled apps you can
-  uninstall and (best-effort) reinstall. See "Debloat toggles" below
-  for exactly what each one does.
-- **Settings** — a list of Windows account names you recognize. Any
-  remote logon from a name not on this list is flagged as a critical
-  "unrecognized user" alert instead of a routine notice.
-
-## Debloat toggles
-
-Every privacy/telemetry item is a genuine on/off switch — turning it on
-applies the block via registry, a service, scheduled tasks, or a Windows
-optional feature; turning it back off restores default Windows behavior
-exactly. What's included:
-
-- **Bing / web results in search** — local files and apps only, no web
-  results or Copilot entry in Start/taskbar search.
-- **Microsoft Copilot** — removes the taskbar button and blocks it by
-  policy.
-- **Widgets** — hides the taskbar icon.
-- **Advertising ID** — stops apps from using it to personalize ads.
-- **Tailored experiences** — stops Windows using diagnostic data for
-  personalized tips/ads.
-- **Activity History** — stops recording/uploading your app and file
-  usage history.
-- **Diagnostic data (telemetry) level** — sets it to the minimum Windows
-  allows (Home/Pro can't reach a true zero; only Enterprise/Education can).
-- **DiagTrack service** — the service that actually transmits most
-  telemetry. Turning it back on restores whatever startup type it had
-  before, not just a guessed default.
-- **Customer Experience Improvement Program tasks** and **Application
-  Experience tasks** — the scheduled tasks behind usage-stat collection
-  and app-compatibility reporting.
-- **Windows Recall** — disables the optional feature and blocks it by
-  policy. Only shows as available on Copilot+ PCs with an NPU.
-
-Bundled apps (Xbox suite, Solitaire, Clipchamp, To Do, Phone Link,
-LinkedIn, Family Safety, News, Weather, Get Help, Tips, Feedback Hub,
-and common social/streaming/game bloat) work the same switch-based way,
-with one honest caveat: turning an app back on tries to re-register it
-from where it was installed, which only works if Windows hasn't already
-deleted those files. If that fails, the toggle tells you exactly what
-happened and shows an **"Open in Microsoft Store"** button that jumps
-straight to that app's search results so you can reinstall it in one
-click — no need to go hunting for it yourself. Any toggle that fails
-because Watchtower isn't elevated also says so directly and tells you
-to reopen it as Administrator, rather than just showing a raw error.
-
-## Taking action
-
-Every remediation control is manual and one-at-a-time, with a
-confirmation before it runs:
-
-- **Kill process** — `taskkill /PID <id> /F`
-- **Disconnect session** — `rwinsta <sessionId>` (forces a logoff)
-- **Block address** — adds inbound + outbound Windows Firewall rules
-  named `Watchtower Block <address>`; unblock removes them
-- **Remove startup entry** — deletes the registry Run value or Startup
-  shortcut, or disables (not deletes) a scheduled task
-- **Defender detections** — Watchtower doesn't attempt to remove these
-  itself; it opens the real Windows Security app so Defender's own
-  (much more thoroughly tested) removal logic handles it
-
-There's deliberately no "auto-clean everything flagged" button.
-"Unsigned" and "has a listening port" are useful signals, not proof —
-an automated cleaner acting on them alone could just as easily kill a
-legitimate small program as an actual threat. You decide, item by item.
-
-## What it watches
-
-| Monitor | What it does | Source |
-|---|---|---|
-| Sessions | Flags any active RDP session | `query user` |
-| Remote tools | Flags known remote-control software (TeamViewer, AnyDesk, VNC variants, etc.) starting up | process list |
-| Event log | Logon/logoff history with duration, failed remote-logon attempts, unrecognized-user flagging, session reconnects | Security log, Event IDs 4624/4625/4634/4778/4779 |
-| Network | Flags the first time a process connects to a given remote address | `Get-NetTCPConnection` |
-| Camera / Mic | Flags new camera/mic use, including background apps | Windows' own access ledger in the registry |
-| Processes | Full process table with signature status and live network use | `Win32_Process` + Authenticode |
-| New program watch | Watches any never-before-seen executable for 5 minutes after its first run: does it open a listening port, call out to the network, or add itself to startup | process list + `Get-NetTCPConnection` + autostart snapshot diff |
-| Health check | Windows Defender status/scan trigger, plus unsigned-autostart and unsigned-listening-process review | `Get-MpComputerStatus`, `Start-MpScan`, autostart snapshot, Authenticode |
-
-## Limitations — read this
-
-- **Process launches are caught in real time, but network activity still
-  isn't.** WMI event subscription covers every process start; connections,
-  camera/mic use, and sessions are still polled on 10–30s intervals, so
-  brief network activity between polls can still be missed.
-- **Watchtower cannot protect itself.** It runs in userspace with no
-  self-defense: anything with administrator rights can kill the process,
-  delete its startup task, or rewrite its files. The hash chain makes log
-  tampering visible after the fact, but nothing here prevents a
-  fully-compromised machine from disabling the monitor outright. That
-  requires a kernel driver and a protected service — a different class of
-  product.
-- **The "Networked" column and new-program connection alerts lag by up
-  to one network-poll cycle (20s)**, since they reuse the last network
-  snapshot rather than re-querying. On the very first tick after
-  startup they may show nothing at all until network data populates.
-- **Some debloat toggles require Run as Administrator** (registry
-  writes under HKLM, service startup-type changes, scheduled tasks,
-  and the Recall optional feature all need elevation; per-user HKCU
-  toggles like Bing search and Widgets work without it).
-- **Restoring a removed app isn't always possible.** Windows doesn't
-  guarantee it keeps an uninstalled app's files around, so "turn back
-  on" is best-effort — it tells you directly if it couldn't restore
-  something, with reinstalling from the Microsoft Store as the fallback.
-- **Killing a process, disconnecting a session, or blocking an address
-  requires the right privileges.** Some of these work unelevated;
-  disconnecting another session and some firewall operations need Run
-  as Administrator to succeed. Failures show the actual Windows error
-  rather than failing silently.
-- **This is not antivirus/EDR.** The process table, new-program watch,
-  and health check give you real, useful signals — but they're
-  heuristics built on public OS APIs, not a malware-detection engine.
-  The Defender scan triggered from Health Check is the actual
-  antivirus in this picture; treat Watchtower's own findings as "worth
-  a look," not a verdict.
-- **Network monitoring is connection-level, not content-level.** You'll
-  see "this app connected to this address" or "this new program called
-  out shortly after launch," not what data was sent. Seeing actual
-  contents would require intercepting your own TLS traffic — a much
-  bigger, more invasive project on its own.
-- **"Signed" is a trust signal, not a verdict.** Plenty of legitimate
-  indie/free software is unsigned. Plenty of malware is
-  signed-then-revoked or uses a stolen certificate. Use it as one input,
-  not the whole answer.
-- **New-program watching only covers the first 5 minutes after first
-  launch.** A program that waits longer than that before phoning home
-  or adding persistence won't be caught by this specific feature (the
-  network and autostart-diffing logic in Health Check can still catch
-  it later, just without the "this just happened" framing).
-- **First run will be noisy-then-quiet.** The network monitor and new
-  program watch both silently learn your current baseline on the very
-  first check, then alert on anything new after that. State lives in
-  `store/*.json` — delete a file to reset that monitor's baseline.
-- **4778/4779 session-reconnect events also fire for Fast User
-  Switching**, not only RDP — treat those as "a session changed state,"
-  not proof of remote access.
-- **Login-history durations depend on the app running continuously.**
-  If Watchtower isn't running when someone logs off, that entry never
-  gets its duration filled in.
-- **The remote-tool watchlist only catches names it knows.** It's editable
-  in **Settings > Remote-tool watchlist** — add any tool the defaults miss,
-  or disable a default that's noisy for you (e.g. `mstsc.exe` if you use
-  Remote Desktop outbound yourself). A brand-new or renamed tool still won't
-  be recognized until you add it.
-- History (`store/history.jsonl`) and known-programs/network baselines
-  persist across restarts; per-session "already alerted" state
-  (sessions, watchlist processes, camera/mic) does not, so a still-
-  running session may alert again after a restart.
-
-## Packaging as an installable app
+You need the .NET 10 SDK and Node 22.
 
 ```bash
-npm run dist
+dotnet test tests/Watchtower.Core.Tests        # core logic, any OS
+dotnet build Watchtower.slnx                   # everything; the service cross-compiles on any OS
+
+cd ui && npm ci && npm test                     # pipe client
+dotnet build ../tools/Watchtower.DevHost
+npm run test:e2e                                # real renderer + real pipe client + dev host, admin and standard user
 ```
 
-This uses `electron-builder` to produce a Windows installer in `dist/`.
+To work on the UI without Windows, run `dotnet run --project tools/Watchtower.DevHost -- --fresh` (add `--standard-user` to see the read-only view). Then start the app, or run the E2E test for screenshots in `ui/test-results/`.
+
+On Windows, from an elevated prompt:
+
+```powershell
+dotnet run --project src/Watchtower.Service -- --console              # run the service in a console
+dotnet run --project src/Watchtower.Service -- --smoke-test 20        # checks ETW, signatures, pipe; exit code 0 = pass
+dotnet publish src/Watchtower.Service -c Release -o artifacts/service -p:Version=0.2.0
+(cd ui; npm ci; npm run pack)                                          # -> artifacts/ui/win-unpacked
+dotnet build installer -c Release -p:Version=0.2.0                    # -> Watchtower.msi
+```
+
+CI (`.github/workflows/ci.yml`) runs all of this. The Windows job also installs the MSI, checks the service starts automatically and answers on its pipe, kills the service to confirm Windows restarts it, and uninstalls.
+
+## Security model
+
+- **Only the service has privileges.** The app runs as the signed-in user and asks the service to act.
+- **The pipe is local and can't be impersonated.**
+  - Network access to the pipe is denied.
+  - Users can't create instances of it.
+  - The service creates the first instance exclusively.
+  - The caller's identity comes from their Windows token, never from anything they send.
+- **Changing things needs an administrator account.**
+  - Ending programs, blocking addresses, signing out sessions, removing startup items, trusting things and changing settings are "Act" methods.
+  - Act methods require membership of Administrators; with UAC an unelevated admin still qualifies.
+  - Standard users get a read-only view with an explanation.
+- **Safety guards run in the service, not just the UI.**
+  - Windows' critical processes (flagged critical by Windows, or core system files verified in place and signed by Microsoft) can't be ended.
+  - Neither can Microsoft Defender or Watchtower itself.
+  - The router, DNS servers, loopback and this PC's own addresses can't be blocked.
+  - Windows Security's startup entries and services can't be removed.
+  - Each refusal comes with a plain reason.
+- **Targets come from the service's own view.** A startup item is removed by its key from the latest scan, and a process by a PID that's actually running. A client can't make SYSTEM delete an arbitrary file or registry value. History export returns content that the app writes as the user.
+- **Data is locked down.** `%ProgramData%\Watchtower` is SYSTEM and Administrators only.
+- **The history is tamper-evident.**
+  - Every entry is hashed over all of its fields with a hand-rolled canonical encoder, so a runtime upgrade can't break verification.
+  - Each entry is chained to the previous one.
+  - A separate high-water mark catches deletion of the newest entries.
+  - The service re-verifies the chain hourly and alerts on a break.
+  - An off-machine backup keeps an untampered copy. It refuses to write through a link planted in the backup folder.
+- **Gaps are detected.** A heartbeat lets the service tell apart a reboot (routine), an administrator stopping it (warning), and the process vanishing while the PC stayed up (urgent).
+- **No outbound calls** except the update check and crash reports. Crash reports are off unless the user opts in during setup and the build has a Sentry DSN. Signature revocation is checked from cache only.
+
+## Updates and safe rollout
+
+A bad update to a security product can take down every machine it reaches; that's what happened with CrowdStrike in July 2024. Watchtower's update path is built so that can't happen quietly.
+
+**On each PC**
+
+1. **Signed, fresh, non-replayable manifest.** The manifest is signed with ECDSA P-256; several keys can be trusted at once, for rotation. It expires after 14 days, and a sequence number stops an older manifest being replayed. The signature is checked before the JSON is parsed.
+2. **Staged rollout.** Each release has a rollout percentage. Each machine has a stable, per-release bucket, so a new build reaches 1% of machines before it reaches 100%. Customers pick a ring:
+   - Early: gets releases as soon as a rollout starts.
+   - Standard: gets them when the machine's bucket is reached.
+   - Delayed: waits one week after 100%.
+3. **Verified download.** The installer's size, SHA-256 and Authenticode publisher must all match.
+4. **Health-gated install with automatic rollback.** Before the new version runs, the updater keeps the previous version's installer. The new version is on probation until it has run for 10 minutes. If it crashes on startup more than 3 times (Windows service recovery restarts it each time), the previous version is reinstalled automatically, and that version is never offered to this machine again. The check runs first thing in `Main`, so even a build that crashes during startup rolls back.
+5. **Publisher kill switches.** `pause` stops one release. `halt` stops every rollout. `recall` blocks a version, and machines running it move to the newest fully rolled-out release, even if it's older.
+6. **One channel.** Code and detection content (watchlists, catalogs) ship together in the one signed MSI. There's no separate fast content channel that could skip the staged rollout, which is how the CrowdStrike file got out.
+7. **User mode only.** Watchtower has no kernel driver, so a bad build can crash Watchtower but not Windows.
+
+**Release runbook**
+
+```bash
+wt-release keygen --out keys --key-id 2026a                    # once; store the key offline, add the public key to appsettings.json
+wt-release add     --manifest manifest.json --msi Watchtower-1.2.0.msi --version 1.2.0 \
+                   --url https://updates.example.com/Watchtower-1.2.0.msi --key keys/2026a.pem --key-id 2026a
+wt-release rollout --manifest manifest.json --version 1.2.0 --percent 1   ...   # then 10, 50, 100
+wt-release pause   --manifest manifest.json --version 1.2.0 ...               # stop if crash-free rate drops
+wt-release recall  --manifest manifest.json --version 1.2.0 ...               # move affected machines off it
+wt-release refresh --manifest manifest.json ...                               # at least weekly, before expiry
+```
+
+Upload `manifest.json` and `manifest.json.sig` to the URL in `appsettings.json`.
+
+Widen a rollout only when the release's crash-free session rate in Sentry holds, for example at 99.9% or better. Early-ring and internal machines should get it first.
+
+## User experience
+
+- **Setup guide on first run.** It explains what Watchtower does, then asks:
+  - which accounts may sign in remotely
+  - which remote-control tools you use
+  - whether to spend 24 hours learning what's normal
+  - update timing
+  - crash-report consent
+  - an optional backup folder
+- **Plain-English alerts.** Each alert has an urgency label (Urgent / Check / FYI), a one-line summary, and "What does this mean?" with an explanation and what to do. It also has the relevant action buttons.
+  - The wording lives in one catalog: `src/Watchtower.Core/Alerts/AlertCatalog.cs`.
+  - Only the summary is stored in history, so explanations can be improved without touching old records.
+  - A test fails if any alert type is missing text.
+- **Trust and Dismiss.** Trust stops alerting about a program, publisher, address, account or startup item. Publisher trust only counts when the signature is valid. Trusted events are still logged, marked as trusted, and each trust decision is itself logged with who made it. Dismiss hides an alert from the feed but keeps it in History.
+- **Learning period.** Routine "first time" events are quiet for the first 24 hours. Serious ones never are.
+
+## Limitations
+
+- **Administrators can still stop it.** Anyone with administrator rights can stop or uninstall the service. Watchtower records the gap and alerts on it afterwards, but prevention would need a protected (ELAM-signed) service or a kernel driver. That's a different class of product with its own risks.
+- **Connections are recorded, not contents.** Only TCP connect and accept events are real-time. UDP (including QUIC) isn't monitored.
+- **Windows limits kernel trace sessions.** If another tool uses them all, Watchtower falls back to polling every few seconds and says so in the sidebar and the log.
+- **Remote tools are matched by executable name.** A renamed tool is still caught as a new program that goes online or opens a port, but not as a "remote-control program".
+- **The app doesn't verify the service's identity.** A process that squats the pipe name while the service is stopped could feed the app false data. The service itself refuses to start if the name is taken.
+- **Signed isn't safe.** "Signed" and "unsigned" are signals, not verdicts.
+
+## Before selling
+
+- [ ] **Run CI on Windows and fix what it finds.** The service, the ETW integration, the MSI and the install/kill/uninstall test have been compiled but not yet run on a real Windows machine.
+- [ ] **Code-signing certificate.** Add `SIGNING_CERT_BASE64` and `SIGNING_CERT_PASSWORD` to CI secrets. Also set `InstallerPublisher` to the certificate's subject name, because updates refuse installers that aren't signed by it.
+- [ ] **Update hosting.** Choose an HTTPS host for the manifest and MSIs, generate keys with `wt-release keygen`, and fill in `UpdateManifestUrl` and `UpdateSigningKeys`.
+- [ ] **Crash reporting.** Set up a Sentry project, set `SentryDsn`, and add a privacy notice covering crash reports.
+- [ ] **WiX licence.** The installer pins WiX 5 (MS-RL). WiX 6+ binaries come with the Open Source Maintenance Fee EULA; decide before upgrading.
+- [ ] **Product identity.** Pick the product name, `Manufacturer`, `ARPURLINFOABOUT` and an icon set (the tray icon is a 16×16 placeholder).

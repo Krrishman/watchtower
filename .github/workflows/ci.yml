@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  cross-platform:
+    name: Core tests + UI tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Core unit tests
+        run: dotnet test tests/Watchtower.Core.Tests -c Release
+
+      - name: Build everything (service cross-compiles for Windows)
+        run: dotnet build Watchtower.slnx -c Release
+
+      - name: UI unit tests
+        working-directory: ui
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          npm ci
+          npm test
+
+      - name: UI end-to-end tests (renderer + pipe client + dev host)
+        working-directory: ui
+        run: |
+          dotnet build ../tools/Watchtower.DevHost -c Debug
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ui/test-results
+
+  windows:
+    name: Service smoke test + installer (Windows)
+    runs-on: windows-latest
+    needs: cross-platform
+    env:
+      VERSION: 0.2.${{ github.run_number }}
+      # Secrets can't be tested in step conditions directly; expose whether one exists.
+      HAS_SIGNING_CERT: ${{ secrets.SIGNING_CERT_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Core unit tests on Windows
+        run: dotnet test tests/Watchtower.Core.Tests -c Release
+
+      - name: Publish service
+        run: dotnet publish src/Watchtower.Service -c Release -o artifacts/service -p:Version=${{ env.VERSION }}
+
+      # Runs the real engine: ETW kernel events, WinVerifyTrust (incl. catalog-signed
+      # notepad.exe), TCP table, sessions, and the named pipe with a real caller token.
+      - name: Service smoke test
+        run: artifacts\service\Watchtower.Service.exe --smoke-test 20 --data-dir "$env:RUNNER_TEMP\wt-smoke"
+
+      - name: Package UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run pack
+
+      - name: Sign binaries
+        if: env.HAS_SIGNING_CERT == 'true'
+        env:
+          SIGNING_CERT: ${{ secrets.SIGNING_CERT_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          $pfx = "$env:RUNNER_TEMP\signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERT))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          & $signtool.FullName sign /f $pfx /p $env:SIGNING_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+            artifacts\service\Watchtower.Service.exe artifacts\ui\win-unpacked\Watchtower.exe
+          Remove-Item $pfx
+
+      - name: Build installer
+        run: dotnet build installer -c Release -p:Version=${{ env.VERSION }}
+
+      - name: Sign installer
+        if: env.HAS_SIGNING_CERT == 'true'
+        env:
+          SIGNING_CERT: ${{ secrets.SIGNING_CERT_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          $pfx = "$env:RUNNER_TEMP\signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERT))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          $msi = (Get-ChildItem installer\bin -Recurse -Filter Watchtower.msi | Select-Object -First 1).FullName
+          & $signtool.FullName sign /f $pfx /p $env:SIGNING_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msi
+          Remove-Item $pfx
+
+      - name: Install, check the service runs and answers, uninstall
+        run: |
+          $msi = (Get-ChildItem installer\bin -Recurse -Filter Watchtower.msi | Select-Object -First 1).FullName
+          $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v `"$env:RUNNER_TEMP\install.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install.log" -Tail 80; throw "Install failed: $($p.ExitCode)" }
+
+          $svc = Get-Service Watchtower
+          $svc.WaitForStatus('Running', '00:00:30')
+          Write-Host "Service status: $($svc.Status), start type: $($svc.StartType)"
+          if ($svc.StartType -ne 'Automatic') { throw 'Service should start automatically' }
+          sc.exe qfailure Watchtower
+
+          node -e "const {ServiceClient}=require('./ui/lib/serviceClient');const c=new ServiceClient();c.on('connected',async()=>{const h=await c.request('hello');console.log(h);const v=await c.request('history.verify');console.log(v);c.stop();process.exit(h.protocol===1&&v.ok?0:1)});c.start();setTimeout(()=>{console.error('no answer from service');process.exit(1)},30000)"
+
+          # Recovery: kill the service process and expect Windows to restart it.
+          Stop-Process -Name Watchtower.Service -Force
+          Start-Sleep -Seconds 15
+          (Get-Service Watchtower).WaitForStatus('Running', '00:00:30')
+          Write-Host 'Service came back after being killed.'
+
+          $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Uninstall failed: $($p.ExitCode)" }
+          if (Get-Service Watchtower -ErrorAction SilentlyContinue) { throw 'Service still present after uninstall' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: watchtower-${{ env.VERSION }}
+          path: installer/bin/**/Watchtower.msi
