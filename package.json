@@ -1,0 +1,29 @@
+{
+  "name": "watchtower",
+  "version": "0.1.0",
+  "description": "Local Windows monitor for remote-access sessions, remote-control tools, unusual network connections, and camera/mic use.",
+  "main": "main.js",
+  "author": "",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.local.watchtower",
+    "productName": "Watchtower",
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "monitors/**/*",
+      "renderer/**/*"
+    ]
+  }
+}

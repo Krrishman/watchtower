@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Watchtower</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="elevation-banner hidden" id="elevationBanner"></div>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Watchtower</span>
+      </div>
+      <div class="status" id="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Starting…</span>
+      </div>
+      <button id="toggleBtn" class="toggle-btn">Pause</button>
+    </header>
+
+    <div class="body">
+      <aside class="rail">
+        <div class="rail-item" data-source="sessions">
+          <span class="rail-label">Sessions</span>
+          <span class="rail-value" id="count-sessions">–</span>
+        </div>
+        <div class="rail-item" data-source="processes">
+          <span class="rail-label">Remote Tools</span>
+          <span class="rail-value" id="count-processes">–</span>
+        </div>
+        <div class="rail-item" data-source="network">
+          <span class="rail-label">Network</span>
+          <span class="rail-value" id="count-network">–</span>
+        </div>
+        <div class="rail-item" data-source="cameraMic">
+          <span class="rail-label">Camera / Mic</span>
+          <span class="rail-value" id="count-cameraMic">–</span>
+        </div>
+        <div class="rail-item" data-source="eventlog">
+          <span class="rail-label">Event Log</span>
+          <span class="rail-value" id="count-eventlog">–</span>
+        </div>
+        <div class="rail-item" data-source="processEvents">
+          <span class="rail-label">Real-time</span>
+          <span class="rail-value" id="count-processEvents">–</span>
+        </div>
+        <div class="rail-item" data-source="newProgramWatch">
+          <span class="rail-label">New Programs</span>
+          <span class="rail-value" id="count-newProgramWatch">–</span>
+        </div>
+
+        <div class="rail-note" id="railNote">
+          Checking privileges&hellip;
+        </div>
+      </aside>
+
+      <main class="content">
+        <nav class="tabs">
+          <button class="tab active" data-tab="feed">Live Feed</button>
+          <button class="tab" data-tab="processes">Processes</button>
+          <button class="tab" data-tab="network">Network</button>
+          <button class="tab" data-tab="history">History</button>
+          <button class="tab" data-tab="exposure">Exposure</button>
+          <button class="tab" data-tab="health">Health Check</button>
+          <button class="tab" data-tab="debloat">Debloat</button>
+          <button class="tab" data-tab="settings">Settings</button>
+        </nav>
+
+        <section class="panel" id="panel-feed">
+          <div class="feed" id="feed">
+            <div class="feed-empty" id="feedEmpty">Watching. Nothing to report yet.</div>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="panel-processes">
+          <div class="panel-header">
+            <span>Every running process. "Signed" is a real trust signal — not proof of anything, but unsigned software is unverified.</span>
+          </div>
+          <div class="subsection">
+            <h4 class="subsection-title">Active sessions</h4>
+            <table class="data-table" id="sessionsTable">
+              <thead><tr><th>User</th><th>Session</th><th>Type</th><th></th></tr></thead>
+              <tbody id="sessionsTableBody"></tbody>
+            </table>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>Process</th><th>PID</th><th>Signed</th><th>Networked</th><th>Path</th><th></th></tr>
+            </thead>
+            <tbody id="processTableBody"></tbody>
+          </table>
+        </section>
+
+        <section class="panel hidden" id="panel-network">
+          <div class="panel-header">
+            <span>Live outbound connections by process. Blocking adds a Windows Firewall rule for that address.</span>
+          </div>
+          <div class="subsection">
+            <h4 class="subsection-title">Blocked addresses</h4>
+            <ul class="user-list" id="blockedList"></ul>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>Process</th><th>Remote address</th><th>Port</th><th>New</th><th></th></tr>
+            </thead>
+            <tbody id="networkTableBody"></tbody>
+          </table>
+        </section>
+
+        <section class="panel hidden" id="panel-history">
+          <div class="panel-header">
+            <span>Everything logged while Watchtower was running, even if you weren't watching.</span>
+            <button id="verifyBtn" class="action-btn">Verify integrity</button>
+            <button id="exportCsvBtn" class="action-btn">Export CSV</button>
+            <button id="exportJsonBtn" class="action-btn">Export JSON</button>
+            <select id="historyFilter">
+              <option value="">All sources</option>
+              <option value="sessions">Sessions</option>
+              <option value="processes">Remote tools</option>
+              <option value="network">Network</option>
+              <option value="cameraMic">Camera / Mic</option>
+              <option value="eventlog">Event log / logins</option>
+              <option value="newProgramWatch">New programs</option>
+            </select>
+          </div>
+          <div class="integrity-bar hidden" id="integrityBar"></div>
+          <div class="feed" id="historyList"></div>
+        </section>
+
+        <section class="panel hidden" id="panel-exposure">
+          <div class="panel-header">
+            <span>What this machine exposes to the network: open ports, firewall state, Remote Desktop, DNS, proxy, tunnels, and shares.</span>
+            <button id="scanExposureBtn" class="toggle-btn">Scan now</button>
+          </div>
+          <div class="feed" id="exposureBody">
+            <div class="feed-empty">Run a scan to see what's reachable from outside this machine.</div>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="panel-health">
+          <div class="panel-header">
+            <span>Triggers a real Windows Defender scan and reviews startup entries / listening ports for anything unsigned.</span>
+            <button id="runHealthBtn" class="toggle-btn">Run Health Check</button>
+          </div>
+          <div id="healthResults" class="health-results">
+            <div class="feed-empty">No health check run yet this session.</div>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="panel-debloat">
+          <div class="panel-header">
+            <span>Every toggle here is reversible. Turning one on applies the block; turning it back off restores default Windows behavior.</span>
+          </div>
+          <div class="feed" id="debloatBody">
+            <div class="feed-empty">Loading…</div>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="panel-settings">
+          <div class="panel-header">
+            <span>People you recognize logging in remotely. Anyone else triggers a critical alert instead of just a notice.</span>
+          </div>
+          <div class="user-input">
+            <input id="newUserInput" type="text" placeholder="Windows account name, e.g. jsmith" />
+            <button id="addUserBtn" class="toggle-btn">Add</button>
+          </div>
+          <ul class="user-list" id="knownUsersList"></ul>
+
+          <div class="subsection">
+            <h4 class="subsection-title">Start automatically</h4>
+            <div id="autostartRow"></div>
+          </div>
+
+          <div class="subsection">
+            <h4 class="subsection-title">Off-machine backup</h4>
+            <div class="toggle-row-desc" style="margin-bottom:10px;">
+              Mirrors the history log to a folder you choose. Point it at a
+              cloud-synced folder (OneDrive, Dropbox, Google Drive) or a network
+              share so the record survives even if this machine is wiped.
+            </div>
+            <div id="offsiteRow"></div>
+          </div>
+
+          <div class="subsection">
+            <h4 class="subsection-title">Remote-tool watchlist</h4>
+            <div class="toggle-row-desc" style="margin-bottom:10px;">
+              Executable names that raise an alert when they start. Add any remote-access
+              tool not covered by the defaults.
+            </div>
+            <div class="user-input" style="padding:0 0 12px;">
+              <input id="newWatchInput" type="text" placeholder="executable name, e.g. quickassist.exe" />
+              <button id="addWatchBtn" class="toggle-btn">Add</button>
+            </div>
+            <ul class="user-list" id="watchlistList"></ul>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
