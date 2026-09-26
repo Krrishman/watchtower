@@ -57,7 +57,9 @@ public class RpcTests
     public async Task ConnectionRoundTripsOverAStreamAndPushesEvents()
     {
         var pipeName = "wt-test-" + Guid.NewGuid().ToString("N");
-        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        // Same buffer sizes as the service: with zero-sized buffers a Windows pipe write
+        // only completes once the other side reads.
+        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 64 * 1024, 64 * 1024);
         using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await Task.WhenAll(server.WaitForConnectionAsync(), client.ConnectAsync());
 
@@ -70,8 +72,10 @@ public class RpcTests
         var reply = JsonDocument.Parse((await reader.ReadLineAsync(cts.Token))!).RootElement;
         Assert.Equal("héllo", reply.GetProperty("result").GetString());
 
+        // Read concurrently, as the UI does.
+        var pending = reader.ReadLineAsync(cts.Token);
         await connection.SendEventAsync("alert", new { title = "x" }, cts.Token);
-        var evt = JsonDocument.Parse((await reader.ReadLineAsync(cts.Token))!).RootElement;
+        var evt = JsonDocument.Parse((await pending)!).RootElement;
         Assert.Equal("alert", evt.GetProperty("event").GetString());
 
         client.Close();
