@@ -1,7 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { run } = require('./exec');
+const { runPowerShell } = require('./exec');
 
 // Checks Authenticode signature status for a list of file paths in a single
 // PowerShell invocation. Returns { [path]: 'Valid' | 'NotSigned' | 'HashMismatch'
@@ -14,8 +14,8 @@ async function checkSignatures(paths) {
   const tmpFile = path.join(os.tmpdir(), `watchtower-sig-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
   fs.writeFileSync(tmpFile, JSON.stringify(paths), 'utf8');
 
-  const script = (
-    `$items = Get-Content -Raw '${tmpFile}' | ConvertFrom-Json; ` +
+  const script =
+    `$items = Get-Content -Raw '${tmpFile.replace(/'/g, "''")}' | ConvertFrom-Json; ` +
     '$items | ForEach-Object { ' +
     'try { ' +
     '$sig = Get-AuthenticodeSignature -LiteralPath $_ -ErrorAction Stop; ' +
@@ -23,12 +23,11 @@ async function checkSignatures(paths) {
     '} catch { ' +
     '[PSCustomObject]@{ Path = $_; Status = "Unavailable" } ' +
     '} ' +
-    '} | ConvertTo-Json -Compress'
-  ).replace(/"/g, '\\"');
+    '} | ConvertTo-Json -Compress';
 
   let out;
   try {
-    out = await run(`powershell -NoProfile -NonInteractive -Command "${script}"`, { timeout: 30_000 });
+    out = await runPowerShell(script, { timeout: 30_000 });
   } finally {
     fs.unlink(tmpFile, () => {});
   }
