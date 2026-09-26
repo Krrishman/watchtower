@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
+    <Company>Watchtower</Company>
+    <Product>Watchtower</Product>
+  </PropertyGroup>
+</Project>
