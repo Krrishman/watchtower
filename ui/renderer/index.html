@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Watchtower</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app">
-    <div class="elevation-banner hidden" id="elevationBanner"></div>
+    <div class="banner hidden" id="banner" role="status"></div>
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
@@ -15,115 +16,104 @@
       </div>
       <div class="status" id="status">
         <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Starting…</span>
+        <span id="statusText">Connecting…</span>
       </div>
-      <button id="toggleBtn" class="toggle-btn">Pause</button>
     </header>
 
     <div class="body">
       <aside class="rail">
-        <div class="rail-item" data-source="sessions">
-          <span class="rail-label">Sessions</span>
-          <span class="rail-value" id="count-sessions">–</span>
-        </div>
-        <div class="rail-item" data-source="processes">
-          <span class="rail-label">Remote Tools</span>
-          <span class="rail-value" id="count-processes">–</span>
-        </div>
-        <div class="rail-item" data-source="network">
-          <span class="rail-label">Network</span>
-          <span class="rail-value" id="count-network">–</span>
-        </div>
-        <div class="rail-item" data-source="cameraMic">
-          <span class="rail-label">Camera / Mic</span>
-          <span class="rail-value" id="count-cameraMic">–</span>
-        </div>
-        <div class="rail-item" data-source="eventlog">
-          <span class="rail-label">Event Log</span>
-          <span class="rail-value" id="count-eventlog">–</span>
-        </div>
-        <div class="rail-item" data-source="processEvents">
-          <span class="rail-label">Real-time</span>
-          <span class="rail-value" id="count-processEvents">–</span>
-        </div>
-        <div class="rail-item" data-source="newProgramWatch">
-          <span class="rail-label">New Programs</span>
-          <span class="rail-value" id="count-newProgramWatch">–</span>
-        </div>
-
-        <div class="rail-note" id="railNote">
-          Checking privileges&hellip;
-        </div>
+        <div class="rail-item" data-source="sessions"><span class="rail-label">Remote sessions</span><span class="rail-value" id="count-sessions">–</span></div>
+        <div class="rail-item" data-source="processes"><span class="rail-label">Remote tools running</span><span class="rail-value" id="count-processes">–</span></div>
+        <div class="rail-item" data-source="network"><span class="rail-label">Connections</span><span class="rail-value" id="count-network">–</span></div>
+        <div class="rail-item" data-source="cameraMic"><span class="rail-label">Camera / mic in use</span><span class="rail-value" id="count-cameraMic">–</span></div>
+        <div class="rail-heading">Sensors</div>
+        <div id="sensorList"></div>
+        <div class="rail-note" id="railNote"></div>
       </aside>
 
       <main class="content">
-        <nav class="tabs">
-          <button class="tab active" data-tab="feed">Live Feed</button>
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-tab="feed">Alerts</button>
           <button class="tab" data-tab="processes">Processes</button>
           <button class="tab" data-tab="network">Network</button>
           <button class="tab" data-tab="history">History</button>
           <button class="tab" data-tab="exposure">Exposure</button>
           <button class="tab" data-tab="health">Health Check</button>
-          <button class="tab" data-tab="debloat">Debloat</button>
+          <button class="tab" data-tab="debloat">Privacy</button>
           <button class="tab" data-tab="settings">Settings</button>
         </nav>
 
         <section class="panel" id="panel-feed">
+          <div class="panel-header">
+            <span>Things that need your attention. Expand an alert to see what it means and what to do.</span>
+            <button id="dismissAllBtn" class="action-btn">Dismiss all</button>
+          </div>
           <div class="feed" id="feed">
-            <div class="feed-empty" id="feedEmpty">Watching. Nothing to report yet.</div>
+            <div class="feed-empty" id="feedEmpty">All quiet. Watchtower will tell you here, and with a notification, if anything needs a look.</div>
           </div>
         </section>
 
         <section class="panel hidden" id="panel-processes">
           <div class="panel-header">
-            <span>Every running process. "Signed" is a real trust signal — not proof of anything, but unsigned software is unverified.</span>
+            <span>Who's signed in, and every running program. "Signed" means the publisher is verified. That's a good sign, not a guarantee.</span>
           </div>
-          <div class="subsection">
-            <h4 class="subsection-title">Active sessions</h4>
-            <table class="data-table" id="sessionsTable">
-              <thead><tr><th>User</th><th>Session</th><th>Type</th><th></th></tr></thead>
-              <tbody id="sessionsTableBody"></tbody>
-            </table>
+          <div class="scroll">
+            <div class="subsection">
+              <h4 class="subsection-title">Signed-in sessions</h4>
+              <table class="data-table">
+                <thead><tr><th>User</th><th>Session</th><th>Connected from</th><th>Type</th><th></th></tr></thead>
+                <tbody id="sessionsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="subsection">
+              <h4 class="subsection-title">Running programs</h4>
+              <table class="data-table">
+                <thead><tr><th>Program</th><th>PID</th><th>Publisher</th><th>Online</th><th>Location</th><th></th></tr></thead>
+                <tbody id="processTableBody"></tbody>
+              </table>
+            </div>
           </div>
-          <table class="data-table">
-            <thead>
-              <tr><th>Process</th><th>PID</th><th>Signed</th><th>Networked</th><th>Path</th><th></th></tr>
-            </thead>
-            <tbody id="processTableBody"></tbody>
-          </table>
         </section>
 
         <section class="panel hidden" id="panel-network">
           <div class="panel-header">
-            <span>Live outbound connections by process. Blocking adds a Windows Firewall rule for that address.</span>
+            <span>Live connections to other computers. Blocking adds a Windows Firewall rule for that address.</span>
           </div>
-          <div class="subsection">
-            <h4 class="subsection-title">Blocked addresses</h4>
-            <ul class="user-list" id="blockedList"></ul>
+          <div class="scroll">
+            <div class="subsection">
+              <h4 class="subsection-title">Blocked addresses</h4>
+              <ul class="user-list" id="blockedList"></ul>
+            </div>
+            <div class="subsection">
+              <h4 class="subsection-title">Active connections</h4>
+              <table class="data-table">
+                <thead><tr><th>Program</th><th>Other computer</th><th>Port</th><th>Direction</th><th></th></tr></thead>
+                <tbody id="networkTableBody"></tbody>
+              </table>
+            </div>
           </div>
-          <table class="data-table">
-            <thead>
-              <tr><th>Process</th><th>Remote address</th><th>Port</th><th>New</th><th></th></tr>
-            </thead>
-            <tbody id="networkTableBody"></tbody>
-          </table>
         </section>
 
         <section class="panel hidden" id="panel-history">
           <div class="panel-header">
-            <span>Everything logged while Watchtower was running, even if you weren't watching.</span>
-            <button id="verifyBtn" class="action-btn">Verify integrity</button>
-            <button id="exportCsvBtn" class="action-btn">Export CSV</button>
-            <button id="exportJsonBtn" class="action-btn">Export JSON</button>
-            <select id="historyFilter">
-              <option value="">All sources</option>
-              <option value="sessions">Sessions</option>
-              <option value="processes">Remote tools</option>
-              <option value="network">Network</option>
-              <option value="cameraMic">Camera / Mic</option>
-              <option value="eventlog">Event log / logins</option>
-              <option value="newProgramWatch">New programs</option>
-            </select>
+            <span>Everything recorded, including quiet entries for things you've trusted.</span>
+            <div class="header-actions">
+              <select id="historyFilter" aria-label="Filter history">
+                <option value="">Everything</option>
+                <option value="sessions">Remote Desktop</option>
+                <option value="eventlog">Sign-ins</option>
+                <option value="processes">Programs</option>
+                <option value="newProgramWatch">New programs</option>
+                <option value="network">Network</option>
+                <option value="cameraMic">Camera / mic</option>
+                <option value="startup">Startup items</option>
+                <option value="watchtower">Watchtower itself</option>
+                <option value="audit">Your actions</option>
+              </select>
+              <button id="verifyBtn" class="action-btn">Check for tampering</button>
+              <button id="exportCsvBtn" class="action-btn">Export CSV</button>
+              <button id="exportJsonBtn" class="action-btn">Export JSON</button>
+            </div>
           </div>
           <div class="integrity-bar hidden" id="integrityBar"></div>
           <div class="feed" id="historyList"></div>
@@ -131,72 +121,56 @@
 
         <section class="panel hidden" id="panel-exposure">
           <div class="panel-header">
-            <span>What this machine exposes to the network: open ports, firewall state, Remote Desktop, DNS, proxy, tunnels, and shares.</span>
+            <span>What this PC exposes to the network: open ports, firewall, Remote Desktop, DNS, proxy, tunnels and shared folders. Nothing is sent anywhere to check this.</span>
             <button id="scanExposureBtn" class="toggle-btn">Scan now</button>
           </div>
-          <div class="feed" id="exposureBody">
-            <div class="feed-empty">Run a scan to see what's reachable from outside this machine.</div>
-          </div>
+          <div class="feed" id="exposureBody"><div class="feed-empty">Run a scan to see what can reach this PC.</div></div>
         </section>
 
         <section class="panel hidden" id="panel-health">
           <div class="panel-header">
-            <span>Triggers a real Windows Defender scan and reviews startup entries / listening ports for anything unsigned.</span>
-            <button id="runHealthBtn" class="toggle-btn">Run Health Check</button>
+            <span>Checks Microsoft Defender and reviews startup items and open ports for anything unverified.</span>
+            <div class="header-actions">
+              <button id="quickScanBtn" class="action-btn">Run a Defender quick scan</button>
+              <button id="runHealthBtn" class="toggle-btn">Run Health Check</button>
+            </div>
           </div>
-          <div id="healthResults" class="health-results">
-            <div class="feed-empty">No health check run yet this session.</div>
-          </div>
+          <div id="healthResults" class="feed"><div class="feed-empty">No health check run yet.</div></div>
         </section>
 
         <section class="panel hidden" id="panel-debloat">
           <div class="panel-header">
-            <span>Every toggle here is reversible. Turning one on applies the block; turning it back off restores default Windows behavior.</span>
+            <span>Every switch here can be undone. On blocks the feature; off puts Windows back the way it was.</span>
           </div>
-          <div class="feed" id="debloatBody">
-            <div class="feed-empty">Loading…</div>
-          </div>
+          <div class="feed" id="debloatBody"><div class="feed-empty">Loading…</div></div>
         </section>
 
         <section class="panel hidden" id="panel-settings">
-          <div class="panel-header">
-            <span>People you recognize logging in remotely. Anyone else triggers a critical alert instead of just a notice.</span>
-          </div>
-          <div class="user-input">
-            <input id="newUserInput" type="text" placeholder="Windows account name, e.g. jsmith" />
-            <button id="addUserBtn" class="toggle-btn">Add</button>
-          </div>
-          <ul class="user-list" id="knownUsersList"></ul>
-
-          <div class="subsection">
-            <h4 class="subsection-title">Start automatically</h4>
-            <div id="autostartRow"></div>
-          </div>
-
-          <div class="subsection">
-            <h4 class="subsection-title">Off-machine backup</h4>
-            <div class="toggle-row-desc" style="margin-bottom:10px;">
-              Mirrors the history log to a folder you choose. Point it at a
-              cloud-synced folder (OneDrive, Dropbox, Google Drive) or a network
-              share so the record survives even if this machine is wiped.
-            </div>
-            <div id="offsiteRow"></div>
-          </div>
-
-          <div class="subsection">
-            <h4 class="subsection-title">Remote-tool watchlist</h4>
-            <div class="toggle-row-desc" style="margin-bottom:10px;">
-              Executable names that raise an alert when they start. Add any remote-access
-              tool not covered by the defaults.
-            </div>
-            <div class="user-input" style="padding:0 0 12px;">
-              <input id="newWatchInput" type="text" placeholder="executable name, e.g. quickassist.exe" />
-              <button id="addWatchBtn" class="toggle-btn">Add</button>
-            </div>
-            <ul class="user-list" id="watchlistList"></ul>
-          </div>
+          <div class="feed" id="settingsBody"><div class="feed-empty">Loading…</div></div>
         </section>
       </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle"></h3>
+      <div id="modalBody"></div>
+      <div class="modal-actions" id="modalActions"></div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast" role="status"></div>
+
+  <div class="wizard-backdrop hidden" id="wizard" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
+    <div class="wizard">
+      <div class="wizard-progress" id="wizardProgress"></div>
+      <h2 id="wizardTitle"></h2>
+      <div class="wizard-body" id="wizardBody"></div>
+      <div class="wizard-actions">
+        <button class="action-btn" id="wizardBack">Back</button>
+        <button class="primary-btn" id="wizardNext">Next</button>
+      </div>
     </div>
   </div>
 

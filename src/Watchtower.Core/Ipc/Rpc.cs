@@ -47,6 +47,7 @@ public sealed class RpcDispatcher
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() },
     };
 
     private readonly Dictionary<string, (Access Access, RpcHandler Handler)> _methods = new(StringComparer.Ordinal);

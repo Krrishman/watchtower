@@ -70,7 +70,8 @@ public sealed class Api
         {
             var acknowledged = _ctx.Settings.Value.Acknowledged.ToHashSet();
             return _ctx.History.Read(new HistoryQuery { Limit = Args.OptInt(a, "limit", 200), IncludeSuppressed = false })
-                .Where(e => !acknowledged.Contains(e.Id))
+                // Your own actions are an audit trail for History, not something to be alerted about.
+                .Where(e => !acknowledged.Contains(e.Id) && e.Source != "audit")
                 .Select(AlertPipeline.Present);
         });
         rpc.Register("alerts.dismiss", Access.Act, (c, a) =>

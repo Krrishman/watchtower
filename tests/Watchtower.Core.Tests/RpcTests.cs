@@ -17,8 +17,13 @@ public class RpcTests
         d.Register("echo", Access.Read, (_, a) => Args.Str(a, "text"));
         d.Register("kill", Access.Act, (c, a) => $"{c.UserName} killed {Args.Int(a, "pid")}");
         d.Register("boom", Access.Read, (_, _) => throw new RpcException(RpcErrors.Denied, "Not allowed: protected."));
+        d.Register("guard", Access.Read, (_, _) => Watchtower.Core.Safety.GuardDecision.Deny("nope"));
         return d;
     }
+
+    [Fact]
+    public void EnumsAreSentByName() =>
+        Assert.Equal("Deny", Handle("{\"id\":9,\"method\":\"guard\"}", User).GetProperty("result").GetProperty("verdict").GetString());
 
     private static JsonElement Handle(string line, Caller caller) =>
         JsonDocument.Parse(Dispatcher().HandleAsync(line, caller, CancellationToken.None).Result).RootElement;

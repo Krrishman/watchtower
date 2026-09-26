@@ -256,7 +256,7 @@ public static partial class AlertCatalog
             Title = "A program is pretending to be part of Windows",
             Detail = "{processName} is running from {processPath}, but the real Windows file lives in {expectedLocation}.",
             Explanation = "Malware often copies the names of Windows system files so it blends in. The real ones never run from anywhere else.",
-            Advice = "End this program and run a full scan from the Health Check tab.",
+            Advice = "End this program, then run a Microsoft Defender scan from the Health Check tab.",
             TrustBy = [TrustTypes.Program],
             Actions = [AlertActions.Kill, AlertActions.OpenWindowsSecurity],
         },
@@ -397,7 +397,7 @@ public static partial class AlertCatalog
         {
             Source = "audit",
             Severity = Severity.Info,
-            Title = "{actor}: {action}",
+            Title = "Action taken: {action}",
             Detail = "{actor} used Watchtower to {action} ({target}).",
             Explanation = "Actions taken from Watchtower are logged so there's a record of what was changed.",
             Advice = "Nothing to do.",

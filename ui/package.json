@@ -1,28 +1,36 @@
 {
-  "name": "watchtower",
-  "version": "0.1.0",
-  "description": "Local Windows monitor for remote-access sessions, remote-control tools, unusual network connections, and camera/mic use.",
+  "name": "watchtower-ui",
+  "productName": "Watchtower",
+  "version": "0.2.0",
+  "description": "Watchtower desktop app: shows alerts and controls from the Watchtower Windows service.",
   "main": "main.js",
-  "author": "",
+  "private": true,
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "test": "node --test test/*.test.js",
+    "pack": "electron-builder --win dir",
+    "test:e2e": "node test/e2e.js && node test/e2e.js --standard-user"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "playwright": "^1.55.0"
   },
   "build": {
-    "appId": "com.local.watchtower",
+    "appId": "com.watchtower.app",
     "productName": "Watchtower",
+    "directories": {
+      "output": "../artifacts/ui"
+    },
     "win": {
-      "target": "nsis"
+      "target": "dir",
+      "icon": "renderer/tray-icon.png"
     },
     "files": [
       "main.js",
       "preload.js",
-      "monitors/**/*",
+      "lib/**/*",
       "renderer/**/*"
     ]
   }
