@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Watchtower.Core/Watchtower.Core.csproj" />
+    <Project Path="src/Watchtower.Service/Watchtower.Service.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Watchtower.Core.Tests/Watchtower.Core.Tests.csproj" />

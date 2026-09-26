@@ -27,6 +27,12 @@ public static class OffsiteBackup
             }
             var target = TargetDirectory(destination, machineName);
             Directory.CreateDirectory(target);
+            // The service writes with high privileges into a folder others may be able to
+            // modify. Refuse to follow a link planted there to redirect the write elsewhere.
+            if (new DirectoryInfo(target).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                return new(false, 0, target, "The backup folder has been replaced by a link to somewhere else, so Watchtower won't write to it.");
+            }
 
             var copied = 0;
             foreach (var name in HistoryLog.AllFiles)
@@ -36,8 +42,9 @@ public static class OffsiteBackup
                 // Copy to a temp name first so an interrupted sync never leaves a truncated log behind.
                 var dest = Path.Combine(target, name);
                 var tmp = dest + ".tmp";
+                File.Delete(tmp);
                 using (var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var output = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var output = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
                     input.CopyTo(output);
                 }

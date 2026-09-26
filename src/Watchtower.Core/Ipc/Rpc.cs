@@ -13,7 +13,7 @@ public enum Access
 }
 
 /// <summary>Who is on the other end of the pipe, as established by the transport (never by the client's own claims).</summary>
-public sealed record Caller(string UserName, bool IsAdministrator, int SessionId, int ProcessId);
+public sealed record Caller(string UserName, bool IsAdministrator, int SessionId, int ProcessId, string Sid = "");
 
 public sealed class RpcException(string code, string message) : Exception(message)
 {
