@@ -683,6 +683,7 @@ html, body {
 .user-list li.off { opacity: 0.5; }
 .user-list li.muted { font-family: var(--sans); }
 
+.wizard-backdrop { z-index: 50; }
 .modal-backdrop, .wizard-backdrop {
   position: fixed;
   inset: 0;
@@ -759,3 +760,33 @@ html, body {
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 
 .panel-header button { white-space: nowrap; flex-shrink: 0; }
+
+/* Dialogs opened from the setup guide must appear above it. */
+.modal-backdrop { z-index: 70; }
+.toast { z-index: 80; }
+.wizard { position: relative; }
+.wizard-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.wizard-close:hover { color: var(--text); background: var(--panel-2); }
+.wizard-actions { align-items: center; gap: 8px; }
+.wizard-actions .spacer { flex: 1; }
+.wizard-error {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(224, 100, 92, 0.14);
+  color: #ff8b83;
+  font-size: 13px;
+  line-height: 1.5;
+}

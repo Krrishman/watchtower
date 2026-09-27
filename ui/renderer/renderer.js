@@ -77,6 +77,7 @@ function toast(message, kind = 'ok') {
 }
 
 function explainError(err) {
+  if (!(err instanceof Error) && err && typeof err.error === 'string') err = { code: err.code, message: err.error };
   if (err.code === 'forbidden') return 'This needs an administrator account on this PC. You can look at everything, but only an administrator can change things.';
   if (err.code === 'offline') return 'The Watchtower service is not running, so this can\'t be done right now.';
   return err.message;
@@ -844,12 +845,17 @@ function wizardSteps() {
       render: () => [
         h('p', { text: 'If someone takes over this PC, the first thing they may do is delete the evidence. Watchtower can keep a copy of its history in a folder that\'s synced to the cloud (OneDrive, Dropbox, Google Drive) or on another drive.' }),
         h('div', { class: 'button-row' },
-          h('button', { class: 'action-btn', text: d.backupFolder ? `Change folder (${d.backupFolder})` : 'Choose a folder…', onclick: async () => {
+          h('button', { class: 'action-btn', text: d.backupFolder ? `Change folder (${d.backupFolder})` : 'Choose a folder…', onclick: async (e) => {
+            wizardError(null);
+            e.target.disabled = true;
             const r = await api.chooseOffsiteFolder();
+            e.target.disabled = false;
             if (r.ok) {
               d.backupFolder = r.result.offsite.destination;
               renderWizard();
-            } else if (!r.canceled) info("Couldn't use that folder", r.error);
+            } else if (!r.canceled) {
+              wizardError(`Couldn't use that folder: ${explainError(r)}`);
+            }
           } })),
         h('p', { class: 'muted small', text: 'You can skip this and set it up later in Settings.' }),
       ],
@@ -882,7 +888,19 @@ function radio(name, value, label, desc, checked, onChange) {
   return h('label', { class: 'check' }, input, h('span', {}, h('strong', { text: label }), h('span', { class: 'muted small block', text: desc })));
 }
 
+function wizardError(message) {
+  const el = $('wizardError');
+  el.textContent = message || '';
+  el.classList.toggle('hidden', !message);
+}
+
+function closeWizard() {
+  $('wizard').classList.add('hidden');
+  if (!state.setupCompleted) toast('Watchtower is already monitoring with safe defaults. Finish setup any time from Settings.');
+}
+
 function renderWizard() {
+  wizardError(null);
   const steps = wizardSteps();
   const step = steps[wizard.step];
   $('wizardTitle').textContent = step.title;
@@ -915,6 +933,12 @@ async function openWizard() {
   renderWizard();
 }
 
+$('wizardClose').addEventListener('click', closeWizard);
+$('wizardLater').addEventListener('click', closeWizard);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('wizard').classList.contains('hidden') && $('modal').classList.contains('hidden')) closeWizard();
+});
+
 $('wizardBack').addEventListener('click', () => {
   wizard.step = Math.max(0, wizard.step - 1);
   renderWizard();
@@ -928,6 +952,10 @@ $('wizardNext').addEventListener('click', async () => {
     return;
   }
   const d = wizard.data;
+  const next = $('wizardNext');
+  next.disabled = true;
+  next.textContent = 'Saving…';
+  wizardError(null);
   try {
     state.settings = await call('setup.complete', {
       trustedAccounts: [...d.trustedAccounts],
@@ -943,7 +971,10 @@ $('wizardNext').addEventListener('click', async () => {
     renderBanner();
     toast('Watchtower is set up and watching.');
   } catch (err) {
-    info("Setup couldn't be saved", explainError(err));
+    wizardError(`Setup couldn't be saved: ${explainError(err)}`);
+  } finally {
+    next.disabled = false;
+    next.textContent = 'Start watching';
   }
 });
 

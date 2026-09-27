@@ -164,11 +164,15 @@
 
   <div class="wizard-backdrop hidden" id="wizard" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
     <div class="wizard">
+      <button class="wizard-close" id="wizardClose" aria-label="Close the setup guide" title="Set up later">&times;</button>
       <div class="wizard-progress" id="wizardProgress"></div>
       <h2 id="wizardTitle"></h2>
       <div class="wizard-body" id="wizardBody"></div>
+      <div class="wizard-error hidden" id="wizardError" role="alert"></div>
       <div class="wizard-actions">
         <button class="action-btn" id="wizardBack">Back</button>
+        <span class="spacer"></span>
+        <button class="action-btn subtle" id="wizardLater">Set up later</button>
         <button class="primary-btn" id="wizardNext">Next</button>
       </div>
     </div>
