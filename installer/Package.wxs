@@ -54,20 +54,23 @@
 
     <!-- The desktop app: shows alerts and notifications; starts hidden in the tray at sign-in. -->
     <ComponentGroup Id="AppComponents" Directory="AppFolder">
-      <Files Include="!(bindpath.Ui)\**" />
+      <!-- The shortcut belongs to the exe's component, so the file is what Windows Installer tracks. -->
+      <Component Id="AppExecutable" Bitness="always64">
+        <File Id="AppExe" Source="!(bindpath.Ui)\Watchtower.exe" KeyPath="yes">
+          <Shortcut Id="WatchtowerShortcut" Directory="ProgramMenuFolder" Name="Watchtower"
+                    Description="Open Watchtower" WorkingDirectory="AppFolder" Advertise="no" />
+        </File>
+      </Component>
+      <Files Include="!(bindpath.Ui)\**">
+        <Exclude Files="!(bindpath.Ui)\Watchtower.exe" />
+      </Files>
       <Component Id="AppAutostart" Bitness="always64">
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Watchtower"
                        Type="string" Value="&quot;[AppFolder]Watchtower.exe&quot; --hidden" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Component Id="StartMenuShortcut" Guid="{B2E4F3A1-8C7D-4E6F-9A1B-2C3D4E5F6A7B}" Bitness="always64">
-        <Shortcut Id="WatchtowerShortcut" Name="Watchtower" Description="Open Watchtower"
-                  Target="[AppFolder]Watchtower.exe" WorkingDirectory="AppFolder" />
-        <RegistryValue Root="HKLM" Key="Software\Watchtower" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
-      </Component>
-    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
 
     <!-- Native crash dumps of the service go to its (admin-only) data folder for diagnosis. -->
     <Component Id="CrashDumpSettings" Directory="INSTALLFOLDER" Bitness="always64">
@@ -81,7 +84,6 @@
     <Feature Id="Main" Title="Watchtower" Level="1">
       <ComponentGroupRef Id="ServiceComponents" />
       <ComponentGroupRef Id="AppComponents" />
-      <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="CrashDumpSettings" />
     </Feature>
 

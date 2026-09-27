@@ -17,6 +17,9 @@
     <UiDir Condition="'$(UiDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\ui\win-unpacked</UiDir>
     <DefineConstants>Version=$(Version)</DefineConstants>
     <SuppressValidation Condition="'$(OS)' != 'Windows_NT'">true</SuppressValidation>
+    <!-- ICE61 flags upgrades with no maximum version. Allowing downgrades is deliberate:
+         it's how a failed update is rolled back to the previous version. -->
+    <SuppressIces>ICE61</SuppressIces>
   </PropertyGroup>
 
   <ItemGroup>
