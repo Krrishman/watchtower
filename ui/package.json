@@ -25,7 +25,7 @@
     },
     "win": {
       "target": "dir",
-      "icon": "renderer/tray-icon.png"
+      "icon": "build/icon.png"
     },
     "files": [
       "main.js",
@@ -33,5 +33,6 @@
       "lib/**/*",
       "renderer/**/*"
     ]
-  }
+  },
+  "author": "Watchtower"
 }

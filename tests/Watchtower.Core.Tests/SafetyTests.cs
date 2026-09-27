@@ -56,6 +56,9 @@ public class SafetyTests
         Assert.Null(SystemProcesses.Masquerade("SVCHOST.EXE", @"c:\windows\system32\SVCHOST.exe", Root));
         Assert.Null(SystemProcesses.Masquerade("notepad.exe", @"C:\anywhere\notepad.exe", Root));
         Assert.Null(SystemProcesses.Masquerade("explorer.exe", @"C:\Windows\explorer.exe", Root));
+        // Kernel-style prefixes (conhost's command line starts with \??\) are the same file.
+        Assert.Null(SystemProcesses.Masquerade("conhost.exe", @"\??\C:\Windows\system32\conhost.exe", Root));
+        Assert.Null(SystemProcesses.Masquerade("svchost.exe", @"\\?\C:\Windows\System32\svchost.exe", Root));
     }
 
     private static readonly NetworkFacts Net = new()

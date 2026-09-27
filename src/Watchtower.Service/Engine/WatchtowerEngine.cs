@@ -408,7 +408,7 @@ public sealed class WatchtowerEngine : BackgroundService
     private static string? PathFromCommandLine(string? commandLine)
     {
         if (string.IsNullOrWhiteSpace(commandLine)) return null;
-        var exe = StartupScanner.ExecutableOf(commandLine);
+        var exe = StartupScanner.ExecutableOf(commandLine) is { } raw ? Core.Safety.SystemProcesses.StripNtPrefix(raw) : null;
         return exe is not null && Path.IsPathFullyQualified(exe) && File.Exists(exe) ? exe : null;
     }
 

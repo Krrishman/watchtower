@@ -59,6 +59,10 @@ public static class SystemProcesses
             : null;
 
     // Windows paths are handled as strings so this logic behaves the same when tested off Windows.
+    /// <summary>Drops the \\?\ and \??\ prefixes Windows uses in long and kernel-style paths (conhost's command line starts with \??\).</summary>
+    public static string StripNtPrefix(string path) =>
+        path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\??\", StringComparison.Ordinal) ? path[4..] : path;
+
     public static string WinDirectoryName(string path)
     {
         var p = path.Replace('/', '\\');
@@ -100,7 +104,7 @@ public static class SystemProcesses
 
     private static string Normalize(string p)
     {
-        p = p.Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
-        return p.StartsWith(@"\\?\", StringComparison.Ordinal) ? p[4..] : p;
+        p = StripNtPrefix(p.Replace('/', '\\').TrimEnd('\\')).ToLowerInvariant();
+        return p;
     }
 }

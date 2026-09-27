@@ -71,7 +71,7 @@ public sealed class SmokeTest(
             pipeListening = pipe.Listening,
             hello,
             historyVerify = ctx.History.Verify(),
-            historyEntries = ctx.History.Read(new Core.History.HistoryQuery { Limit = 50 }).Select(e => $"{e.Severity} {e.Kind}: {e.Title}"),
+            historyEntries = ctx.History.Read(new Core.History.HistoryQuery { Limit = 50 }).Select(e => $"{e.Severity} {e.Kind}: {e.Title} | {e.Detail}"),
         };
         Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions(RpcDispatcher.Json) { WriteIndented = true }));
 
@@ -84,6 +84,8 @@ public sealed class SmokeTest(
         if (!report.pipeListening) failures.Add("pipe server is not listening");
         if (hello is null || !hello.Contains("\"isAdmin\":true")) failures.Add($"pipe hello failed or caller not recognized as admin: {hello}");
         if (!report.historyVerify.Ok) failures.Add($"history does not verify: {report.historyVerify.Message}");
+        // A clean CI machine has no disguised programs; any alert here is a false positive.
+        foreach (var e in report.historyEntries.Where(e => e.Contains("program.masquerading"))) failures.Add($"false masquerade alert: {e}");
 
         foreach (var f in failures) log.LogError("SMOKE FAIL: {Failure}", f);
         Console.WriteLine(failures.Count == 0 ? "SMOKE TEST PASSED" : $"SMOKE TEST FAILED ({failures.Count})");
