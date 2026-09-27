@@ -126,7 +126,8 @@ jobs:
           if ($svc.StartType -ne 'Automatic') { throw 'Service should start automatically' }
           sc.exe qfailure Watchtower
 
-          node -e "const {ServiceClient}=require('./ui/lib/serviceClient');const c=new ServiceClient();c.on('connected',async()=>{const h=await c.request('hello');console.log(h);const v=await c.request('history.verify');console.log(v);c.stop();process.exit(h.protocol===1&&v.ok?0:1)});c.start();setTimeout(()=>{console.error('no answer from service');process.exit(1)},30000)"
+          node ui/test/service-check.js
+          if ($LASTEXITCODE -ne 0) { throw 'Installed service did not answer on its pipe' }
 
           # Recovery: kill the service process and expect Windows to restart it.
           Stop-Process -Name Watchtower.Service -Force
@@ -137,6 +138,17 @@ jobs:
           $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Uninstall failed: $($p.ExitCode)" }
           if (Get-Service Watchtower -ErrorAction SilentlyContinue) { throw 'Service still present after uninstall' }
+
+      - name: Service diagnostics
+        if: failure()
+        run: |
+          Get-Service Watchtower -ErrorAction SilentlyContinue | Format-List *
+          Get-ChildItem "$env:ProgramData\Watchtower\crashes" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-30) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -match 'Watchtower|\.NET Runtime|Application Error' } |
+            Select-Object -First 30 | Format-List TimeCreated, ProviderName, Id, Message
+          Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = (Get-Date).AddMinutes(-30) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Watchtower' } | Select-Object -First 20 | Format-List TimeCreated, Id, Message
 
       - uses: actions/upload-artifact@v4
         with:

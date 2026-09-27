@@ -148,17 +148,28 @@ public sealed class RpcConnection : IAsyncDisposable
 {
     private readonly Stream _stream;
     private readonly RpcDispatcher _dispatcher;
-    private readonly Caller _caller;
+    private readonly Func<Caller> _identify;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private Caller? _caller;
 
     public RpcConnection(Stream stream, RpcDispatcher dispatcher, Caller caller)
+        : this(stream, dispatcher, () => caller)
+    {
+    }
+
+    /// <param name="identify">
+    /// Establishes who the client is. Called after the first message has been read, because
+    /// Windows won't let a pipe server impersonate its client before reading from the pipe.
+    /// </param>
+    public RpcConnection(Stream stream, RpcDispatcher dispatcher, Func<Caller> identify)
     {
         _stream = stream;
         _dispatcher = dispatcher;
-        _caller = caller;
+        _identify = identify;
     }
 
-    public Caller Caller => _caller;
+    /// <summary>Null until the client has sent its first message and been identified.</summary>
+    public Caller? Caller => _caller;
 
     public async Task RunAsync(CancellationToken ct)
     {
@@ -168,6 +179,7 @@ public sealed class RpcConnection : IAsyncDisposable
             var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
             if (line is null) return;
             if (line.Length == 0) continue;
+            _caller ??= _identify();
             var response = await _dispatcher.HandleAsync(line, _caller, ct).ConfigureAwait(false);
             await WriteLineAsync(response, ct).ConfigureAwait(false);
         }

@@ -83,6 +83,47 @@ public class RpcTests
     }
 
     [Fact]
+    public async Task CallerIsIdentifiedOnlyAfterTheFirstMessage()
+    {
+        var identified = 0;
+        var stream = new DuplexStream("{\"id\":1,\"method\":\"ping\"}\n{\"id\":2,\"method\":\"ping\"}\n");
+        var connection = new RpcConnection(stream, Dispatcher(), () => { identified++; return User; });
+        Assert.Null(connection.Caller);
+
+        await connection.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, identified);
+        Assert.Same(User, connection.Caller);
+        Assert.Equal(2, stream.Written.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+    }
+
+    [Fact]
+    public async Task ConnectionWhoseIdentityFailsIsDropped()
+    {
+        var stream = new DuplexStream("{\"id\":1,\"method\":\"ping\"}\n");
+        var connection = new RpcConnection(stream, Dispatcher(), () => throw new UnauthorizedAccessException("no token"));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => connection.RunAsync(CancellationToken.None));
+        Assert.Equal("", stream.Written);
+    }
+
+    private sealed class DuplexStream(string input) : Stream
+    {
+        private readonly MemoryStream _in = new(Encoding.UTF8.GetBytes(input));
+        private readonly MemoryStream _out = new();
+        public string Written => Encoding.UTF8.GetString(_out.ToArray());
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => _in.Read(buffer, offset, count);
+        public override void Write(byte[] buffer, int offset, int count) => _out.Write(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+    }
+
+    [Fact]
     public async Task OversizedMessagesAreRefused()
     {
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 5000) + "\n"));

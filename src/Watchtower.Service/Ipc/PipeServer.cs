@@ -97,26 +97,20 @@ public sealed class PipeServer : BackgroundService, IEventSink
 
     private async Task ServeAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
-        Caller caller;
-        try
-        {
-            caller = Identify(pipe);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            _log.LogWarning(ex, "Rejected pipe client whose identity couldn't be established");
-            await pipe.DisposeAsync();
-            return;
-        }
-
+        // The caller is identified after their first message: Windows refuses to let a pipe
+        // server impersonate a client before it has read from the pipe (ERROR_CANNOT_IMPERSONATE).
         var id = Guid.NewGuid();
-        var connection = new RpcConnection(pipe, _dispatcher, caller);
+        var connection = new RpcConnection(pipe, _dispatcher, () => Identify(pipe));
         _connections[id] = connection;
         try
         {
             await connection.RunAsync(ct);
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            if (connection.Caller is null) _log.LogWarning(ex, "Rejected pipe client whose identity couldn't be established");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or OperationCanceledException or ObjectDisposedException)
         {
             // Client went away or sent garbage: just drop it.
         }
@@ -148,7 +142,8 @@ public sealed class PipeServer : BackgroundService, IEventSink
 
     public void Broadcast(string name, object? data)
     {
-        foreach (var (id, connection) in _connections)
+        // Only clients that have identified themselves receive events.
+        foreach (var (id, connection) in _connections.Where(c => c.Value.Caller is not null))
         {
             _ = SendAsync(id, connection, name, data);
         }
