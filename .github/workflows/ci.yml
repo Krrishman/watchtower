@@ -3,6 +3,13 @@ name: CI
 on:
   push:
   pull_request:
+  # Run by hand (Actions tab -> CI -> Run workflow) with a version to publish a release.
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Version to publish as a GitHub release, like 1.2.3 (leave empty for a test build)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -75,11 +82,16 @@ jobs:
         with:
           node-version: 22
 
-      # A tag like v1.2.3 builds that version; any other push builds 0.2.<run number>.
+      # A release version (tag v1.2.3 or the Run workflow input) builds that version;
+      # anything else builds 0.2.<run number>.
       - name: Pick version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          if ($env:GITHUB_REF -like 'refs/tags/v*') { $v = $env:GITHUB_REF_NAME.Substring(1) } else { $v = "0.2.$env:GITHUB_RUN_NUMBER" }
-          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "Release tags must look like v1.2.3, got $env:GITHUB_REF_NAME" }
+          if ($env:RELEASE_VERSION) { $v = $env:RELEASE_VERSION.TrimStart('v') }
+          elseif ($env:GITHUB_REF -like 'refs/tags/v*') { $v = $env:GITHUB_REF_NAME.Substring(1) }
+          else { $v = "0.2.$env:GITHUB_RUN_NUMBER" }
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "Release versions must look like 1.2.3, got '$v'" }
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Building version $v"
 
@@ -170,10 +182,11 @@ jobs:
           name: watchtower-${{ env.VERSION }}
           path: installer/bin/**/Watchtower.msi
 
-  # Pushing a tag like v1.2.3 publishes the tested MSI as a GitHub release.
+  # Pushing a tag like v1.2.3, or running the workflow with a release version, publishes
+  # the tested MSI as a GitHub release.
   release:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_version != ''
     needs: windows
     runs-on: ubuntu-latest
     permissions:
@@ -186,14 +199,19 @@ jobs:
           merge-multiple: true
 
       - name: Name the installer and write checksums
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          if [ -n "$RELEASE_VERSION" ]; then version="${RELEASE_VERSION#v}"; else version="${GITHUB_REF_NAME#v}"; fi
+          echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
           cp "$(find dist -name Watchtower.msi | head -1)" "Watchtower-$version.msi"
           sha256sum "Watchtower-$version.msi" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           files: |
             Watchtower-*.msi
             SHA256SUMS.txt

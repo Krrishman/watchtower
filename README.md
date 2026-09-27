@@ -78,7 +78,9 @@ CI (`.github/workflows/ci.yml`) runs all of this. The Windows job also installs 
 git tag v0.3.0 && git push origin v0.3.0
 ```
 
-The tag must look like `v1.2.3`. The release is only published if every test on both Linux and Windows passes. GitHub releases are for manual downloads; installed copies update through the signed update manifest described below.
+Or, without a tag: on GitHub open **Actions → CI → Run workflow**, enter a version such as `0.3.0`, and run it. CI creates the `v0.3.0` tag when it publishes.
+
+Versions must look like `1.2.3`. The release is only published if every test on both Linux and Windows passes. GitHub releases are for manual downloads; installed copies update through the signed update manifest described below.
 
 ## Security model
 
