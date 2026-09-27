@@ -18,8 +18,10 @@
     <DefineConstants>Version=$(Version)</DefineConstants>
     <SuppressValidation Condition="'$(OS)' != 'Windows_NT'">true</SuppressValidation>
     <!-- ICE61 flags upgrades with no maximum version. Allowing downgrades is deliberate:
-         it's how a failed update is rolled back to the previous version. -->
-    <SuppressIces>ICE61</SuppressIces>
+         it's how a failed update is rolled back to the previous version.
+         ICE43/ICE57 treat the Start-menu shortcut as per-user data. In this per-machine package
+         (ALLUSERS=1) it goes to the all-users Start menu, so these are false positives. -->
+    <SuppressIces>ICE43;ICE57;ICE61</SuppressIces>
   </PropertyGroup>
 
   <ItemGroup>
