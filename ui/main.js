@@ -6,13 +6,15 @@ const userApps = require('./lib/userApps');
 
 // Crash dumps stay on this machine; nothing is uploaded from the UI.
 crashReporter.start({ uploadToServer: false });
-process.on('uncaughtException', (err) => {
+// %APPDATA%\Watchtower\ui-errors.log: what went wrong, for support.
+function logError(message) {
   try {
-    fs.appendFileSync(path.join(app.getPath('userData'), 'ui-errors.log'), `${new Date().toISOString()} ${err.stack || err}\n`);
+    fs.appendFileSync(path.join(app.getPath('userData'), 'ui-errors.log'), `${new Date().toISOString()} ${message}\n`);
   } catch {
     // Nowhere left to report it.
   }
-});
+}
+process.on('uncaughtException', (err) => logError(err.stack || String(err)));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -161,6 +163,7 @@ ipcMain.handle('rpc', async (_e, method, params) => {
     if (method === 'settings.update' || method === 'setup.complete') refreshNotifyPreference();
     return { ok: true, result };
   } catch (err) {
+    logError(`rpc ${method} failed: [${err.code || 'error'}] ${err.message}`);
     return { ok: false, code: err.code || 'failed', error: err.message };
   }
 });

@@ -59,9 +59,13 @@ public sealed class RpcDispatcher
 
     public IReadOnlyCollection<string> Methods => _methods.Keys;
 
+    /// <summary>Raised when a request fails (not for refusals by design, like forbidden), so the host can log it.</summary>
+    public event Action<string, Caller, Exception>? Failed;
+
     public async Task<string> HandleAsync(string line, Caller caller, CancellationToken ct)
     {
         JsonElement id = default;
+        var methodName = "?";
         try
         {
             using var doc = JsonDocument.Parse(line);
@@ -70,6 +74,7 @@ public sealed class RpcDispatcher
             if (root.TryGetProperty("id", out var idProp)) id = idProp.Clone();
             if (!root.TryGetProperty("method", out var m) || m.ValueKind != JsonValueKind.String) throw RpcException.BadRequest("Missing method.");
             var method = m.GetString()!;
+            methodName = method;
             var args = root.TryGetProperty("params", out var p) ? p.Clone() : default;
 
             if (!_methods.TryGetValue(method, out var entry)) throw new RpcException(RpcErrors.UnknownMethod, $"Unknown method '{method}'.");
@@ -91,10 +96,12 @@ public sealed class RpcDispatcher
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException or KeyNotFoundException)
         {
+            Failed?.Invoke(methodName, caller, ex);
             return Error(id, RpcErrors.BadRequest, ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Failed?.Invoke(methodName, caller, ex);
             return Error(id, RpcErrors.Failed, ex.Message);
         }
     }

@@ -76,6 +76,9 @@ ctx.Pipeline.Published += alert =>
     offsite.OnAlert(alert);
 };
 host.Services.GetRequiredService<Api>();
+var rpcLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Watchtower.Rpc");
+host.Services.GetRequiredService<RpcDispatcher>().Failed += (method, caller, ex) =>
+    rpcLog.LogError(ex, "Request {Method} from {User} (admin: {Admin}) failed", method, caller.UserName, caller.IsAdministrator);
 
 var options = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<WatchtowerOptions>>().Value;
 CrashReporting.Configure(options.SentryDsn, ctx.Settings.Value.CrashReports);
