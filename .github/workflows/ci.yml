@@ -64,7 +64,6 @@ jobs:
     runs-on: windows-latest
     needs: cross-platform
     env:
-      VERSION: 0.2.${{ github.run_number }}
       # Secrets can't be tested in step conditions directly; expose whether one exists.
       HAS_SIGNING_CERT: ${{ secrets.SIGNING_CERT_BASE64 != '' }}
     steps:
@@ -75,6 +74,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      # A tag like v1.2.3 builds that version; any other push builds 0.2.<run number>.
+      - name: Pick version
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $v = $env:GITHUB_REF_NAME.Substring(1) } else { $v = "0.2.$env:GITHUB_RUN_NUMBER" }
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "Release tags must look like v1.2.3, got $env:GITHUB_REF_NAME" }
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Building version $v"
 
       - name: Core unit tests on Windows
         run: dotnet test tests/Watchtower.Core.Tests -c Release
@@ -162,3 +169,39 @@ jobs:
         with:
           name: watchtower-${{ env.VERSION }}
           path: installer/bin/**/Watchtower.msi
+
+  # Pushing a tag like v1.2.3 publishes the tested MSI as a GitHub release.
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: watchtower-*
+          path: dist
+          merge-multiple: true
+
+      - name: Name the installer and write checksums
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cp "$(find dist -name Watchtower.msi | head -1)" "Watchtower-$version.msi"
+          sha256sum "Watchtower-$version.msi" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Watchtower-*.msi
+            SHA256SUMS.txt
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Download the **Watchtower .msi** file below and run it. It installs the background service and the Watchtower app.
+
+            This is a test build and isn't code-signed yet, so Windows SmartScreen may say it "protected your PC". Click **More info**, then **Run anyway**.
+
+            To check the download, compare its SHA-256 (`Get-FileHash .\Watchtower-*.msi`) with SHA256SUMS.txt.

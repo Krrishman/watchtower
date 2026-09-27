@@ -72,6 +72,14 @@ dotnet build installer -c Release -p:Version=0.2.0                    # -> Watch
 
 CI (`.github/workflows/ci.yml`) runs all of this. The Windows job also installs the MSI, checks the service starts automatically and answers on its pipe, kills the service to confirm Windows restarts it, and uninstalls.
 
+**Publishing a download.** Push a version tag and CI builds, tests and publishes that version as a GitHub release (marked pre-release), with the MSI and a SHA256SUMS.txt attached:
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+The tag must look like `v1.2.3`. The release is only published if every test on both Linux and Windows passes. GitHub releases are for manual downloads; installed copies update through the signed update manifest described below.
+
 ## Security model
 
 - **Only the service has privileges.** The app runs as the signed-in user and asks the service to act.
